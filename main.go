@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/tdewolff/minify/v2"
 	"github.com/tdewolff/minify/v2/js"
@@ -12,10 +13,21 @@ import (
 
 func main() {
 	// Define the directory containing the JavaScript files
-	jsDir := "public/js"
+	jsDir := "public"
 	m := minify.New()
 	m.AddFunc("application/javascript", js.Minify)
 
+	// Process the JS files in the specified directory
+	if err := processJSFiles(jsDir, m); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	fmt.Println("All JavaScript files minified successfully.")
+}
+
+// Function to walk through the directory and minify all .js files
+func processJSFiles(jsDir string, m *minify.M) error {
 	// Track errors during the minification process
 	errorOccurred := false
 
@@ -25,51 +37,60 @@ func main() {
 			fmt.Printf("Error accessing path %s: %v\n", path, err)
 			return err
 		}
-
 		// Process only .js files, excluding already minified ones
-		if !info.IsDir() && filepath.Ext(path) == ".js" && filepath.Ext(path) != ".min.js" {
+		if !info.IsDir() && filepath.Ext(path) == ".js" && !strings.Contains(path, ".min") {
 			fmt.Printf("Minifying: %s\n", path)
 
-			// Read the source file
-			input, readErr := ioutil.ReadFile(path)
-			if readErr != nil {
-				fmt.Printf("Failed to read file %s: %v\n", path, readErr)
+			// Call the minify function for each JS file
+			if minifyErr := minifyJSFile(path, m); minifyErr != nil {
 				errorOccurred = true
-				return nil
+				fmt.Println(minifyErr)
 			}
-
-			// Minify the JavaScript content
-			minified, minifyErr := m.Bytes("application/javascript", input)
-			if minifyErr != nil {
-				fmt.Printf("Failed to minify file %s: %v\n", path, minifyErr)
-				errorOccurred = true
-				return nil
-			}
-
-			// Write the minified content to a new file with .min.js extension
-			minifiedFile := path[:len(path)-3] + ".min.js"
-			writeErr := ioutil.WriteFile(minifiedFile, minified, 0644)
-			if writeErr != nil {
-				fmt.Printf("Failed to write file %s: %v\n", minifiedFile, writeErr)
-				errorOccurred = true
-				return nil
-			}
-
-			fmt.Printf("Minified file created: %s\n", minifiedFile)
 		}
 		return nil
 	})
 
 	if err != nil {
-		fmt.Printf("Error walking the directory: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error walking the directory: %v", err)
 	}
 
-	// Exit with a non-zero status code if any errors occurred
+	// Return an error if minification failed for any file
 	if errorOccurred {
-		fmt.Println("Minification process failed.")
-		os.Exit(1)
+		return fmt.Errorf("minification process failed")
 	}
 
-	fmt.Println("All JavaScript files minified successfully.")
+	return nil
 }
+
+// Function to handle the minification of a single JavaScript file
+func minifyJSFile(path string, m *minify.M) error {
+	// Read the source file
+	input, readErr := ioutil.ReadFile(path)
+	if readErr != nil {
+		return fmt.Errorf("failed to read file %s: %v", path, readErr)
+	}
+
+	// Minify the JavaScript content
+	minified, minifyErr := m.Bytes("application/javascript", input)
+	if minifyErr != nil {
+		return fmt.Errorf("failed to minify file %s: %v", path, minifyErr)
+	}
+
+	// Write the minified content to a new file with .min.js extension
+	minifiedFile := path[:len(path)-3] + ".min.js"
+	writeErr := ioutil.WriteFile(minifiedFile, minified, 0644)
+	if writeErr != nil {
+		return fmt.Errorf("failed to write file %s: %v", minifiedFile, writeErr)
+	}
+
+	fmt.Printf("Minified file created: %s\n", minifiedFile)
+	return nil
+}
+
+func endsWithMinified(path string) bool {
+	return filepath.Ext(path) == ".min.js"
+}
+
+
+
+
